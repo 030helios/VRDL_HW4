@@ -43,12 +43,12 @@ optional arguments:
   -h, --help         show this help message and exit
   --cuda             use cuda?
   --model MODEL      model path
-  --dataset DATASET  dataset name, Default: Set5
+  --dataset DATASET  dataset name, Default: datasets/training_hr_images
   --gpus GPUS        gpu ids (default: 0)
 ```
 An example of training usage is shown as follows:
 ```
-python eval.py --cuda --dataset Set5
+python eval.py --cuda --dataset datasets/training_hr_images
 ```
 
 ### Demo
@@ -65,27 +65,8 @@ optional arguments:
 ```
 An example of usage is shown as follows:
 ```
-python eval.py --model model/model_epoch_50.pth --dataset Set5 --cuda
+python eval.py --model model/model_epoch_50.pth --dataset datasets/training_hr_images --cuda
 ```
 
 ### Prepare Training dataset
   - We provide a simple hdf5 format training sample in data folder with 'data' and 'label' keys, the training data is generated with Matlab Bicubic Interplotation, please refer [Code for Data Generation](https://github.com/twtygqyy/pytorch-vdsr/tree/master/data) for creating training files.
-
-### Performance
-  - We provide a pretrained VDSR model trained on [291](https://drive.google.com/open?id=1Rt3asDLuMgLuJvPA1YrhyjWhb97Ly742) images with data augmentation
-  - No bias is used in this implementation, and the gradient clipping's implementation is different from paper
-  - Performance in PSNR on Set5
-  
-| Scale        | VDSR Paper          | VDSR PyTorch|
-| ------------- |:-------------:| -----:|
-| 2x      | 37.53      | 37.65 |
-| 3x      | 33.66      | 33.77|
-| 4x      | 31.35      | 31.45 |
-
-### Result
-From left to right are ground truth, bicubic and vdsr
-<p>
-  <img src='Set5/butterfly_GT.bmp' height='200' width='200'/>
-  <img src='result/input.bmp' height='200' width='200'/>
-  <img src='result/output.bmp' height='200' width='200'/>
-</p>

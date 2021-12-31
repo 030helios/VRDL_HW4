@@ -8,7 +8,7 @@ import scipy.io as sio
 parser = argparse.ArgumentParser(description="PyTorch VDSR Eval")
 parser.add_argument("--cuda", action="store_true", help="use cuda?")
 parser.add_argument("--model", default="model/model_epoch_50.pth", type=str, help="model path")
-parser.add_argument("--dataset", default="Set5", type=str, help="dataset name, Default: Set5")
+parser.add_argument("--dataset", default="datasets/training_hr_images", type=str, help="dataset name, Default: datasets/training_hr_images")
 parser.add_argument("--gpus", default="0", type=str, help="gpu ids (default: 0)")
 
 def PSNR(pred, gt, shave_border=0):
