@@ -45,9 +45,10 @@ def main():
     cudnn.benchmark = True
 
     print("===> Loading datasets")
-    train_set = DatasetFromHdf5("train.h5")
+    train_set = DatasetFromHdf5("datasets/train1.h5")
+    for i in range(2, 5):
+        train_set = torch.utils.data.ConcatDataset([train_set, DatasetFromHdf5("datasets/train" + str(i) + ".h5")])
     training_data_loader = DataLoader(dataset=train_set, num_workers=opt.threads, batch_size=opt.batchSize, shuffle=True)
-
     print("===> Building model")
     model = Net()
     criterion = nn.MSELoss(size_average=False)
