@@ -1,14 +1,14 @@
 clear;close all;
 
-folder = '/../datasets/training_hr_images';
+folder = '../datasets/training_hr_images';
 
-savepath = '/../train.h5';
+savepath = '../';
 size_input = 41;
 size_label = 41;
 stride = 41;
 
 %% scale factors
-scale = [3, 4];
+scale = [2, 3, 4];
 %% initialization
 data = zeros(size_input, size_input, 1, 1);
 label = zeros(size_label, size_label, 1, 1);
@@ -29,7 +29,7 @@ for i = 1:length(filepaths)
                     image = flipdim(image, 1);
                 end
 
-                image = imrotate(image, 90 * (degree - 1));
+                image = imrotate(image, 90 * degree);
 
                 if size(image, 3) == 3
                     image = rgb2ycbcr(image);

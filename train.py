@@ -22,7 +22,6 @@ parser.add_argument("--clip", type=float, default=0.4, help="Clipping Gradients.
 parser.add_argument("--threads", type=int, default=1, help="Number of threads for data loader to use, Default: 1")
 parser.add_argument("--momentum", default=0.9, type=float, help="Momentum, Default: 0.9")
 parser.add_argument("--weight-decay", "--wd", default=1e-4, type=float, help="Weight decay, Default: 1e-4")
-parser.add_argument('--pretrained', default='', type=str, help='path to pretrained model (default: none)')
 parser.add_argument("--gpus", default="0", type=str, help="gpu ids (default: 0)")
 
 def main():
@@ -67,15 +66,6 @@ def main():
             model.load_state_dict(checkpoint["model"].state_dict())
         else:
             print("=> no checkpoint found at '{}'".format(opt.resume))
-
-    # optionally copy weights from a checkpoint
-    if opt.pretrained:
-        if os.path.isfile(opt.pretrained):
-            print("=> loading model '{}'".format(opt.pretrained))
-            weights = torch.load(opt.pretrained)
-            model.load_state_dict(weights['model'].state_dict())
-        else:
-            print("=> no model found at '{}'".format(opt.pretrained))  
 
     print("===> Setting Optimizer")
     optimizer = optim.SGD(model.parameters(), lr=opt.lr, momentum=opt.momentum, weight_decay=opt.weight_decay)
