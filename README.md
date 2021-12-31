@@ -10,5 +10,5 @@ python3 inference.py --model weights.pth
 ```
 
 ## Training
-1. run matlab/generate.train.m
+1. run matlab/generate_train.m
 2. run train.py

@@ -9,6 +9,9 @@ stride = 41;
 
 %% scale factors
 scale = [2, 3, 4];
+%% downsizing
+downsizes = [1, 0.7, 0.5];
+
 %% initialization
 data = zeros(size_input, size_input, 1, 1);
 label = zeros(size_label, size_label, 1, 1);
@@ -21,35 +24,42 @@ filepaths = [];
 filepaths = [filepaths; dir(fullfile(folder, '*.png'))];
 
 for i = 1:length(filepaths)
-    for flip = 1:2
+    for flip = 1:3
         for degree = 1:4
             for s = 1:length(scale)
-                image = imread(fullfile(folder, filepaths(i).name));
-                if flip == 1
-                    image = flipdim(image, 1);
-                end
+                for downsize = 1:length(downsizes)
+                    image = imread(fullfile(folder, filepaths(i).name));
 
-                image = imrotate(image, 90 * degree);
+                    if flip == 1
+                        image = flipdim(image, 1);
+                    end
+                    if flip == 2
+                        image = flipdim(image, 2);
+                    end
 
-                if size(image, 3) == 3
-                    image = rgb2ycbcr(image);
-                    image = im2double(image(:, :, 1));
+                    image = imrotate(image, 90 * degree);
 
-                    im_label = modcrop(image, scale(s));
-                    [hei, wid] = size(im_label);
-                    im_input = imresize(imresize(im_label, 1 / scale(s), 'bicubic'), [hei, wid], 'bicubic');
-                    filepaths(i).name
+                    image = imresize(image, downsizes(downsize), 'bicubic');
 
-                    for x = 1:stride:hei - size_input + 1
-                        for y = 1:stride:wid - size_input + 1
+                    if size(image, 3) == 3
+                        image = rgb2ycbcr(image);
+                        image = im2double(image(:, :, 1));
 
-                            subim_input = im_input(x:x + size_input - 1, y:y + size_input - 1);
-                            subim_label = im_label(x:x + size_label - 1, y:y + size_label - 1);
+                        im_label = modcrop(image, scale(s));
+                        [hei, wid] = size(im_label);
+                        im_input = imresize(imresize(im_label, 1 / scale(s), 'bicubic'), [hei, wid], 'bicubic');
+                        filepaths(i).name
+                        for x = 1:stride:hei - size_input + 1
+                            for y = 1:stride:wid - size_input + 1
 
-                            count = count + 1;
+                                subim_input = im_input(x:x + size_input - 1, y:y + size_input - 1);
+                                subim_label = im_label(x:x + size_label - 1, y:y + size_label - 1);
 
-                            data(:, :, 1, count) = subim_input;
-                            label(:, :, 1, count) = subim_label;
+                                count = count + 1;
+
+                                data(:, :, 1, count) = subim_input;
+                                label(:, :, 1, count) = subim_label;
+                            end
                         end
                     end
                 end
