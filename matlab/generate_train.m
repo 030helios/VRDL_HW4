@@ -1,8 +1,8 @@
 clear;close all;
 
-folder = 'datasets/training_hr_images';
+folder = '/../datasets/training_hr_images';
 
-savepath = 'train.h5';
+savepath = '/../train.h5';
 size_input = 41;
 size_label = 41;
 stride = 41;
