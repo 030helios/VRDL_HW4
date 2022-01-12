@@ -1,121 +1,163 @@
-import argparse, os
-import torch
-import random
-import torch.backends.cudnn as cudnn
-import torch.nn as nn
+import argparse
+import os
+from math import log10
+
+import pandas as pd
 import torch.optim as optim
+import torch.utils.data
+import torchvision.utils as utils
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
-from vdsr import Net
-from dataset import DatasetFromHdf5
+from tqdm import tqdm
 
-# Training settings
-parser = argparse.ArgumentParser(description="PyTorch VDSR")
-parser.add_argument("--batchSize", type=int, default=128, help="Training batch size")
-parser.add_argument("--nEpochs", type=int, default=50, help="Number of epochs to train for")
-parser.add_argument("--lr", type=float, default=0.1, help="Learning Rate. Default=0.1")
-parser.add_argument("--step", type=int, default=10, help="Sets the learning rate to the initial LR decayed by momentum every n epochs, Default: n=10")
-parser.add_argument("--cuda", default=1, action="store_true", help="Use cuda?")
-parser.add_argument("--resume", default="", type=str, help="Path to checkpoint (default: none)")
-parser.add_argument("--start-epoch", default=1, type=int, help="Manual epoch number (useful on restarts)")
-parser.add_argument("--clip", type=float, default=0.4, help="Clipping Gradients. Default=0.4")
-parser.add_argument("--threads", type=int, default=1, help="Number of threads for data loader to use, Default: 1")
-parser.add_argument("--momentum", default=0.9, type=float, help="Momentum, Default: 0.9")
-parser.add_argument("--weight-decay", "--wd", default=1e-4, type=float, help="Weight decay, Default: 1e-4")
-parser.add_argument("--gpus", default="0", type=str, help="gpu ids (default: 0)")
+import pytorch_ssim
+from data_utils import TrainDatasetFromFolder, ValDatasetFromFolder, display_transform
+from loss import GeneratorLoss
+from model import Generator, Discriminator
 
-def main():
-    global opt, model
+parser = argparse.ArgumentParser(description='Train Super Resolution Models')
+parser.add_argument('--crop_size', default=100, type=int,
+                    help='training images crop size')
+parser.add_argument('--upscale_factor', default=3, type=int,
+                    help='super resolution upscale factor')
+parser.add_argument('--num_epochs', default=500,
+                    type=int, help='train epoch number')
+
+best = 0
+if __name__ == '__main__':
     opt = parser.parse_args()
-    print(opt)
 
-    cuda = opt.cuda
-    if cuda:
-        print("=> use gpu id: '{}'".format(opt.gpus))
-        os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpus
-        if not torch.cuda.is_available():
-                raise Exception("No GPU found or Wrong gpu id, please run without --cuda")
+    CROP_SIZE = opt.crop_size
+    UPSCALE_FACTOR = opt.upscale_factor
+    NUM_EPOCHS = opt.num_epochs
 
-    opt.seed = random.randint(1, 10000)
-    print("Random Seed: ", opt.seed)
-    torch.manual_seed(opt.seed)
-    if cuda:
-        torch.cuda.manual_seed(opt.seed)
+    train_set = TrainDatasetFromFolder(
+        'data/train', crop_size=CROP_SIZE, upscale_factor=UPSCALE_FACTOR)
+    train_loader = DataLoader(
+        dataset=train_set, num_workers=4, batch_size=64, shuffle=True)
+    val_set = ValDatasetFromFolder('data/val', upscale_factor=UPSCALE_FACTOR)
+    val_loader = DataLoader(dataset=val_set, num_workers=4,
+                            batch_size=1, shuffle=False)
 
-    cudnn.benchmark = True
+    netG = Generator(UPSCALE_FACTOR)
+    print('# generator parameters:', sum(param.numel() for param in netG.parameters()))
+    netD = Discriminator()
+    print('# discriminator parameters:', sum(param.numel() for param in netD.parameters()))
+    
+    generator_criterion = GeneratorLoss()
+    
+    if torch.cuda.is_available():
+        netG.cuda()
+        netD.cuda()
+        generator_criterion.cuda()
+    
+    optimizerG = optim.Adam(netG.parameters())
+    optimizerD = optim.Adam(netD.parameters())
+    
+    results = {'psnr': [], 'ssim': []}
+    epoch = 0
+    while 1:
+        epoch+=1
+        train_bar = tqdm(train_loader)
+    
+        running_results = {'batch_sizes': 0, 'd_loss': 0, 'g_loss': 0, 'd_score': 0, 'g_score': 0}
+    
+        netG.train()
+        netD.train()
+        for data, target in train_bar:
+            g_update_first = True
+            batch_size = data.size(0)
+            running_results['batch_sizes'] += batch_size
+    
+            ############################
+            # (1) Update D network: maximize D(x)-1-D(G(z))
+            ###########################
+            real_img = Variable(target)
+            if torch.cuda.is_available():
+                real_img = real_img.cuda()
+            z = Variable(data)
+            if torch.cuda.is_available():
+                z = z.cuda()
+            fake_img = netG(z)
+    
+            netD.zero_grad()
+            real_out = netD(real_img).mean()
+            fake_out = netD(fake_img).mean()
+            d_loss = 1 - real_out + fake_out
+            d_loss.backward(retain_graph=True)
+            optimizerD.step()
+    
+            ############################
+            # (2) Update G network: minimize 1-D(G(z)) + Perception Loss + Image Loss + TV Loss
+            ###########################
+            netG.zero_grad()
+            ## The two lines below are added to prevent runetime error in Google Colab ##
+            fake_img = netG(z)
+            fake_out = netD(fake_img).mean()
+            ##
+            g_loss = generator_criterion(fake_out, fake_img, real_img)
+            g_loss.backward()
+            
+            fake_img = netG(z)
+            fake_out = netD(fake_img).mean()
+            
+            
+            optimizerG.step()
 
-    print("===> Loading datasets")
-    train_set = DatasetFromHdf5("datasets/train1.h5")
-    for i in range(2, 5):
-        train_set = torch.utils.data.ConcatDataset([train_set, DatasetFromHdf5("datasets/train" + str(i) + ".h5")])
-    training_data_loader = DataLoader(dataset=train_set, num_workers=opt.threads, batch_size=opt.batchSize, shuffle=True)
-    print("===> Building model")
-    model = Net()
-    criterion = nn.MSELoss(size_average=False)
-
-    print("===> Setting GPU")
-    if cuda:
-        model = model.cuda()
-        criterion = criterion.cuda()
-
-    # optionally resume from a checkpoint
-    if opt.resume:
-        if os.path.isfile(opt.resume):
-            print("=> loading checkpoint '{}'".format(opt.resume))
-            checkpoint = torch.load(opt.resume)
-            opt.start_epoch = checkpoint["epoch"] + 1
-            model.load_state_dict(checkpoint["model"].state_dict())
-        else:
-            print("=> no checkpoint found at '{}'".format(opt.resume))
-
-    print("===> Setting Optimizer")
-    optimizer = optim.SGD(model.parameters(), lr=opt.lr, momentum=opt.momentum, weight_decay=opt.weight_decay)
-
-    print("===> Training")
-    for epoch in range(opt.start_epoch, opt.nEpochs + 1):
-        train(training_data_loader, optimizer, model, criterion, epoch)
-        save_checkpoint(model, epoch)
-
-def adjust_learning_rate(optimizer, epoch):
-    """Sets the learning rate to the initial LR decayed by 10 every 10 epochs"""
-    lr = opt.lr * (0.1 ** (epoch // opt.step))
-    return lr
-
-def train(training_data_loader, optimizer, model, criterion, epoch):
-    lr = adjust_learning_rate(optimizer, epoch-1)
-
-    for param_group in optimizer.param_groups:
-        param_group["lr"] = lr
-
-    print("Epoch = {}, lr = {}".format(epoch, optimizer.param_groups[0]["lr"]))
-
-    model.train()
-
-    for iteration, batch in enumerate(training_data_loader, 1):
-        input, target = Variable(batch[0]), Variable(batch[1], requires_grad=False)
-
-        if opt.cuda:
-            input = input.cuda()
-            target = target.cuda()
-
-        loss = criterion(model(input), target)
-        optimizer.zero_grad()
-        loss.backward() 
-        nn.utils.clip_grad_norm(model.parameters(),opt.clip) 
-        optimizer.step()
-
-        if iteration%100 == 0:
-            print("===> Epoch[{}]({}/{}): Loss: {:.10f}".format(epoch, iteration, len(training_data_loader), loss.data))
-
-def save_checkpoint(model, epoch):
-    model_out_path = "checkpoint/" + "model_epoch_{}.pth".format(epoch)
-    state = {"epoch": epoch ,"model": model}
-    if not os.path.exists("checkpoint/"):
-        os.makedirs("checkpoint/")
-
-    torch.save(state, model_out_path)
-
-    print("Checkpoint saved to {}".format(model_out_path))
-
-if __name__ == "__main__":
-    main()
+            # loss for current batch before optimization 
+            running_results['g_loss'] += g_loss.item() * batch_size
+            running_results['d_loss'] += d_loss.item() * batch_size
+            running_results['d_score'] += real_out.item() * batch_size
+            running_results['g_score'] += fake_out.item() * batch_size
+    
+            train_bar.set_description(desc='[%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f' % (
+                epoch, NUM_EPOCHS, running_results['d_loss'] / running_results['batch_sizes'],
+                running_results['g_loss'] / running_results['batch_sizes'],
+                running_results['d_score'] / running_results['batch_sizes'],
+                running_results['g_score'] / running_results['batch_sizes']))
+    
+        netG.eval()
+        out_path = 'training_results/SRF_' + str(UPSCALE_FACTOR) + '/'
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)
+        val_images = []
+        with torch.no_grad():
+            val_bar = tqdm(val_loader)
+            valing_results = {'mse': 0, 'ssims': 0, 'psnr': 0, 'ssim': 0, 'batch_sizes': 0}
+            for val_lr, val_hr_restore, val_hr in val_bar:
+                batch_size = val_lr.size(0)
+                valing_results['batch_sizes'] += batch_size
+                lr = val_lr
+                hr = val_hr
+                if torch.cuda.is_available():
+                    lr = lr.cuda()
+                    hr = hr.cuda()
+                sr = netG(lr)
+        
+                batch_mse = ((sr - hr) ** 2).data.mean()
+                valing_results['mse'] += batch_mse * batch_size
+                batch_ssim = pytorch_ssim.ssim(sr, hr).item()
+                valing_results['ssims'] += batch_ssim * batch_size
+                valing_results['psnr'] = 10 * log10((hr.max()**2) / (valing_results['mse'] / valing_results['batch_sizes']))
+                valing_results['ssim'] = valing_results['ssims'] / valing_results['batch_sizes']
+                val_bar.set_description(
+                    desc='[converting LR images to SR images] PSNR: %.4f dB SSIM: %.4f' % (
+                        valing_results['psnr'], valing_results['ssim']))
+        
+                val_images.extend(
+                    [display_transform()(val_hr_restore.squeeze(0)), display_transform()(hr.data.cpu().squeeze(0)),
+                     display_transform()(sr.data.cpu().squeeze(0))])
+            val_images = torch.stack(val_images)
+            val_images = torch.chunk(val_images, val_images.size(0) // 15)
+            index = 1
+    
+        if valing_results['psnr']>best:
+            best = valing_results['psnr']
+            val_save_bar = tqdm(val_images, desc='[saving training results]')
+            for image in val_save_bar:
+                image = utils.make_grid(image, nrow=3, padding=5)
+                utils.save_image(image, out_path + 'epoch_%d_index_%d.png' % (epoch, index), padding=5)
+                index += 1
+            # save model parameters
+            torch.save(netG.state_dict(), 'epochs/netG_%d.pth' % (epoch))
+            torch.save(netD.state_dict(), 'epochs/netD_%d.pth' % (epoch))
