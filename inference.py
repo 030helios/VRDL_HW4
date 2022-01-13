@@ -23,6 +23,8 @@ else:
     model.load_state_dict(torch.load(
         MODEL_NAME, map_location=lambda storage, loc: storage))
 
+if not os.path.exists("0716034"):
+    os.makedirs("0716034")
 for img_name in range(14):
     IMAGE_NAME = str(img_name).zfill(2)
     image = Image.open("data/test/"+IMAGE_NAME+".png")
