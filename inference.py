@@ -2,7 +2,7 @@ import argparse
 import torch
 from PIL import Image
 from torchvision.transforms import ToTensor, ToPILImage
-
+import os
 from model import Generator
 
 parser = argparse.ArgumentParser(description='Test Single Image')
